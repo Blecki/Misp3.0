@@ -50,11 +50,6 @@ namespace MISPLIB
                 Iterator.Advance();
                 modifier = Modifier.Expand;
             }
-            else if (Iterator.Next == ':')
-            {
-                Iterator.Advance();
-                modifier = Modifier.Evaluate;
-            }
 
             if (Iterator.AtEnd) throw new ParseError("Unexpected end of input", Iterator.place);
 

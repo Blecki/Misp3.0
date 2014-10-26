@@ -21,6 +21,7 @@ namespace WpfApplication1
     public partial class MainWindow : Window
     {
         MISPLIB.RecordAtom GlobalScope = new MISPLIB.RecordAtom();
+        Paragraph OutputRoot = new Paragraph();
 
         public MainWindow()
         {
@@ -32,6 +33,27 @@ namespace WpfApplication1
                 OutputBox.AppendText(s);
                 OutputBox.ScrollToEnd();
             });
+
+            MISPLIB.Core.CoreFunctions.Add("recall", (args, c) =>
+                {
+                    if (args.Count != 2) throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to recall.");
+                    var func = args[1].Evaluate(c);
+                    var builder = new StringBuilder();
+                    func.Emit(builder);
+                    InputBox.Text = builder.ToString();
+                    return func;
+                });
+
+            MISPLIB.Core.CoreFunctions.Add("@", (args, c) =>
+                {
+                    return GlobalScope;
+                });
+
+            OutputBox.Document.Blocks.Add(OutputRoot);
+
+            var buildVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            var run = new Run("MISP 3.0 Build " + buildVersion + "\n") { Foreground = Brushes.Red };
+            OutputRoot.Inlines.Add(run);
         }
 
         private void TextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -48,21 +70,26 @@ namespace WpfApplication1
         {
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Return)
             {
+                var saveInput = InputBox.Text.Trim();
+
                 try
                 {
-                    OutputBox.AppendText(InputBox.Text + "\n");
-                    var parsedMisp = MISPLIB.Core.Parse(new MISPLIB.StringIterator(InputBox.Text));
+                    OutputRoot.Inlines.Add(new Run(saveInput + "\n") { Foreground = Brushes.Orange });
+                    var parsedMisp = MISPLIB.Core.Parse(new MISPLIB.StringIterator(saveInput));
                     InputBox.Clear();
 
                     var evaluatedResult = MISPLIB.Core.Evaluate(parsedMisp, GlobalScope);
                     var outputBuilder = new StringBuilder();
                     evaluatedResult.Emit(outputBuilder);
-                    OutputBox.AppendText(outputBuilder.ToString() + "\n");
+
+                    OutputRoot.Inlines.Add(new Run(outputBuilder.ToString() + "\n") { Foreground = Brushes.ForestGreen });
                     OutputBox.ScrollToEnd();
                 }
                 catch (Exception x)
                 {
-                    OutputBox.AppendText(x.Message);
+                    OutputRoot.Inlines.Add(new Run(x.Message + "\n" + x.StackTrace + "\n") { Foreground = Brushes.Red });
+                    InputBox.Text = saveInput;
+                    OutputBox.ScrollToEnd();
                 }
 
                 e.Handled = true;

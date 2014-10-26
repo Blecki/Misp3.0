@@ -58,6 +58,7 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="RecordAtom.cs" />
+    <Compile Include="SerializationContext.cs" />
     <Compile Include="StringAtom.cs" />
     <Compile Include="StringIterator.cs" />
     <Compile Include="TokenAtom.cs" />

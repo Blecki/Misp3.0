@@ -13,7 +13,14 @@ namespace MISPLIB
         public RecordAtom DeclarationScope;
 
         public override AtomType Type { get { return AtomType.Function; } }
-        protected override void ImplementEmit(StringBuilder Into) { Into.Append("FUNCTION"); }
+        protected override void ImplementEmit(StringBuilder Into) 
+        {
+            Into.Append("(func (");
+            Into.Append(String.Join(" ", ArgumentNames));
+            Into.Append(") ");
+            Implementation.Emit(Into);
+            Into.Append(")");
+        }
         public override object GetSystemValue() { return this; }
         public override Atom Evaluate(EvaluationContext Context) { throw new EvaluationError("Function improperly evaluated."); }
     }

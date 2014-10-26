@@ -21,9 +21,6 @@ namespace MISPLIB
             if (!Context.ActiveScope.TryGetValue(Value, out result))
                 throw new EvaluationError("Could not find token in active scope.");
 
-            if (Modifier == MISPLIB.Modifier.Evaluate)
-                return result.Evaluate(Context);
-
             return result;
         }
     }

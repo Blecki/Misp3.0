@@ -58,6 +58,7 @@ namespace MISPLIB
                 Context.ActiveScope.Variables.Upsert(function.ArgumentNames[i], argumentList[i + 1]);
             var result = function.Implementation.Evaluate(Context);
             Context.ActiveScope = saveScope;
+
             return result;
         }
     }
