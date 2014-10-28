@@ -17,7 +17,7 @@ namespace MISPLIB
 
             PrepareForSerialization(RootAtom);
 
-            Into.AppendFormat("(with (\n  (atoms (array {0} []))\n   (funcs '(\n", AtomsToWrite.Count);
+            Into.AppendFormat("(with (\n  (atoms (array {0} []))\n   (funcs (list \n", AtomsToWrite.Count);
             foreach (var func in Functions)
             {
                 Into.Append("      (func (");

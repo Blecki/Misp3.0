@@ -11,6 +11,7 @@ namespace MISPLIB
         None,
         Quote,
         Expand,
+        Evaluate,
     }
 
     public enum AtomType
@@ -44,6 +45,9 @@ namespace MISPLIB
                     break;
                 case MISPLIB.Modifier.Quote:
                     Into.Append("'");
+                    break;
+                case MISPLIB.Modifier.Evaluate:
+                    Into.Append(":");
                     break;
             }
 

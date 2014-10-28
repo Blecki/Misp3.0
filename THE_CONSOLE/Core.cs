@@ -10,7 +10,7 @@ namespace MISPLIB
     {
         internal static Dictionary<String, Func<List<Atom>, EvaluationContext, Atom>> CoreFunctions;
 
-        private static List<Atom> PrepareStandardArgumentList(List<Atom> Arguments, EvaluationContext Context)
+        public static List<Atom> PrepareStandardArgumentList(List<Atom> Arguments, EvaluationContext Context)
         {
             var result = new List<Atom>();
             for (int i = 1; i < Arguments.Count; ++i)
@@ -27,6 +27,21 @@ namespace MISPLIB
         public static void InitiateCore(Action<String> StandardOutput)
         {
             CoreFunctions = new Dictionary<String, Func<List<Atom>, EvaluationContext, Atom>>();
+
+            CoreFunctions.Add("parse", (args, c) =>
+                {
+                    var l = PrepareStandardArgumentList(args, c);
+                    if (l.Count != 1) throw new EvaluationError("Incorrect number of arguments to parse.");
+                    if (l[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to parse.");
+                    return Parse(new StringIterator((l[0] as StringAtom).Value));
+                });
+
+            CoreFunctions.Add("eval", (args, c) =>
+                {
+                    if (args.Count != 2) throw new EvaluationError("Incorrect number of arguments to eval.");
+                    var firstRound = args[1].Evaluate(c);
+                    return firstRound.Evaluate(c);
+                });
 
             #region Basic Math
 
@@ -89,15 +104,27 @@ namespace MISPLIB
                     var function = new FunctionAtom();
                     function.DeclarationScope = c.ActiveScope;
                     function.Implementation = args[2];
-                    function.ArgumentNames = new List<String>();
+                    function.ArgumentNames = new List<TokenAtom>();
 
                     foreach (var argumentName in (args[1] as ListAtom).Value)
                     {
                         if (argumentName.Type != AtomType.Token) throw new EvaluationError("Malformed argument list in func.");
-                        function.ArgumentNames.Add((argumentName as TokenAtom).Value);
+                        if (argumentName.Modifier == Modifier.Expand) throw new EvaluationError("Expand modifier illegal on argument name in func.");
+                        if (argumentName.Modifier == Modifier.Evaluate) throw new EvaluationError("Evaluate modifier illegal on argument name in func.");
+                        function.ArgumentNames.Add(argumentName as TokenAtom);
                     }
 
                     return function;
+                });
+
+            CoreFunctions.Add("set-decl-scope", (args, c) =>
+                {
+                    var l = PrepareStandardArgumentList(args, c);
+                    if (l.Count != 2) throw new EvaluationError("Incorrect number of arguments passed to set-decl-scope.");
+                    if (l[0].Type != AtomType.Function) throw new EvaluationError("Expected function as first argument to set-decl-scope.");
+                    if (l[1].Type != AtomType.Record) throw new EvaluationError("Expected record as second argument to set-decl-scope.");
+                    (l[0] as FunctionAtom).DeclarationScope = (l[1] as RecordAtom);
+                    return l[0];
                 });
 
             #endregion
@@ -160,14 +187,33 @@ namespace MISPLIB
                     return value;
                 });
 
+            CoreFunctions.Add("multi-set", (args, c) =>
+                {
+                    if (args.Count < 2) throw new EvaluationError("Expected at least one argument to multi-set.");
+                    var record = args[1].Evaluate(c);
+                    if (record.Type != AtomType.Record) throw new EvaluationError("Expected record as first argument to multi-set.");
+
+                    for (int i = 2; i < args.Count; ++i)
+                    {
+                        if (args[i].Type != AtomType.List) throw new EvaluationError("Expected lists as repeating arguments to multi-set.");
+                        var list = args[i] as ListAtom;
+                        if (list.Value.Count != 2) throw new EvaluationError("Expected pairs as repeating arguments to multi-set.");
+                        if (list.Value[0].Type != AtomType.Token) throw new EvaluationError("Expected token as first value in pair as repeating arguments to multi-set.");
+                        var value = list.Value[1].Evaluate(c);
+                        (record as RecordAtom).Variables.Upsert((list.Value[0] as TokenAtom).Value, value);
+                    }
+
+                    return record;
+                });
+
             CoreFunctions.Add("get", (args, c) =>
                 {
                     if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to get.");
 
                     var obj = args[1].Evaluate(c);
-                    if (obj.Type != AtomType.Record) throw new EvaluationError("First argument to set must be a record.");
+                    if (obj.Type != AtomType.Record) throw new EvaluationError("First argument to get must be a record.");
 
-                    if (args[2].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to set.");
+                    if (args[2].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to get.");
 
                     Atom value;
                     if ((obj as RecordAtom).Variables.TryGetValue((args[2] as TokenAtom).Value, out value))
@@ -179,6 +225,11 @@ namespace MISPLIB
             #endregion
 
             #region Lists
+
+            CoreFunctions.Add("list", (args, c) =>
+                {
+                    return new ListAtom { Value = PrepareStandardArgumentList(args, c) };
+                });
 
             CoreFunctions.Add("length", (args, c) =>
                 {
@@ -223,6 +274,13 @@ namespace MISPLIB
                     return r;
                 });
 
+            CoreFunctions.Add("last", (args, c) =>
+                {
+                    var l = PrepareStandardArgumentList(args, c);
+                    if (l.Count == 0) throw new EvaluationError("Can't get last element of empty list.");
+                    return l.Last();
+                });
+
             #endregion
 
             #region Serialization
@@ -251,6 +309,14 @@ namespace MISPLIB
 
                     System.IO.File.WriteAllText((l[0] as StringAtom).Value, (l[1] as StringAtom).Value);
                     return l[1];
+                });
+
+            CoreFunctions.Add("read-all", (args, c) =>
+                {
+                    var l = PrepareStandardArgumentList(args, c);
+                    if (l.Count != 1) throw new EvaluationError("Incorrect number of arguments passed to read-all.");
+                    if (l[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to read-all.");
+                    return new StringAtom { Value = System.IO.File.ReadAllText((l[0] as StringAtom).Value) };
                 });
 
             #endregion

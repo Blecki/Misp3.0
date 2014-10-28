@@ -27,6 +27,9 @@ namespace WpfApplication1
         {
             InitializeComponent();
             TextBox_TextChanged(null, null);
+            String OpenFilePath = null;
+
+            this.Title = "New Environment";
 
             MISPLIB.Core.InitiateCore(s =>
             {
@@ -46,6 +49,54 @@ namespace WpfApplication1
 
             MISPLIB.Core.CoreFunctions.Add("@", (args, c) =>
                 {
+                    return GlobalScope;
+                });
+
+            MISPLIB.Core.CoreFunctions.Add("save", (args, c) =>
+                {
+                    var l = MISPLIB.Core.PrepareStandardArgumentList(args, c);
+                    String saveFileName;
+                    if (l.Count == 1)
+                    {
+                        if (l[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected string as first argument to save.");
+                        saveFileName = (l[0] as MISPLIB.StringAtom).Value;
+                    }
+                    else if (l.Count == 0)
+                    {
+                        if (String.IsNullOrEmpty(OpenFilePath))
+                            throw new MISPLIB.EvaluationError("This environment has never been saved. Please supply a filename.");
+                        saveFileName = OpenFilePath;
+                    }
+                    else
+                        throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to save.");
+
+                    var serializer = new MISPLIB.SerializationContext();
+                    var builder = new StringBuilder();
+                    serializer.Serialize(GlobalScope, builder);
+
+                    var dirName = System.IO.Path.GetDirectoryName(saveFileName);
+                    if (!String.IsNullOrEmpty(dirName))
+                        System.IO.Directory.CreateDirectory(dirName);
+
+                    System.IO.File.WriteAllText(saveFileName, builder.ToString());
+                    OpenFilePath = saveFileName;
+                    this.Title = OpenFilePath;
+                    return new MISPLIB.StringAtom { Value = OpenFilePath };
+                });
+
+            MISPLIB.Core.CoreFunctions.Add("load", (args, c) =>
+                {
+                    var l = MISPLIB.Core.PrepareStandardArgumentList(args, c);
+                    if (l.Count != 1) throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to load.");
+                    if (l[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected path as first argument to load.");
+
+                    var text = System.IO.File.ReadAllText((l[0] as MISPLIB.StringAtom).Value);
+                    var parsed = MISPLIB.Core.Parse(new MISPLIB.StringIterator(text));
+                    var result = MISPLIB.Core.Evaluate(parsed, GlobalScope);
+                    if (result.Type != MISPLIB.AtomType.Record) throw new MISPLIB.EvaluationError("Loading of file did not produce record.");
+                    OpenFilePath = (l[0] as MISPLIB.StringAtom).Value;
+                    this.Title = OpenFilePath;
+                    GlobalScope = result as MISPLIB.RecordAtom;
                     return GlobalScope;
                 });
 
@@ -71,11 +122,12 @@ namespace WpfApplication1
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Return)
             {
                 var saveInput = InputBox.Text.Trim();
+                var code = "(" + saveInput + ")";
 
                 try
                 {
-                    OutputRoot.Inlines.Add(new Run(saveInput + "\n") { Foreground = Brushes.Orange });
-                    var parsedMisp = MISPLIB.Core.Parse(new MISPLIB.StringIterator(saveInput));
+                    OutputRoot.Inlines.Add(new Run(code + "\n") { Foreground = Brushes.Orange });
+                    var parsedMisp = MISPLIB.Core.Parse(new MISPLIB.StringIterator(code));
                     InputBox.Clear();
 
                     var evaluatedResult = MISPLIB.Core.Evaluate(parsedMisp, GlobalScope);

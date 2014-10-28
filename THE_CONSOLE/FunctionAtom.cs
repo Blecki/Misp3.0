@@ -8,7 +8,7 @@ namespace MISPLIB
 {
     public class FunctionAtom : Atom
     {
-        public List<String> ArgumentNames;
+        public List<TokenAtom> ArgumentNames;
         public Atom Implementation;
         public RecordAtom DeclarationScope;
 
@@ -16,7 +16,11 @@ namespace MISPLIB
         protected override void ImplementEmit(StringBuilder Into) 
         {
             Into.Append("(func (");
-            Into.Append(String.Join(" ", ArgumentNames));
+            foreach (var name in ArgumentNames)
+            {
+                name.Emit(Into);
+                Into.Append(" ");
+            }
             Into.Append(") ");
             Implementation.Emit(Into);
             Into.Append(")");
