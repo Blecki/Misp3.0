@@ -38,6 +38,8 @@ namespace MISPLIB
         {
             CoreFunctions = new List<CoreFunction>();
 
+            #region Vitals
+
             AddCoreFunction("parse (str)", (args, c) =>
                 {
                     if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to parse.");
@@ -48,6 +50,8 @@ namespace MISPLIB
                 {
                     return args[0].Evaluate(c);
                 });
+
+            #endregion
 
             #region Basic Math
 
@@ -256,6 +260,30 @@ namespace MISPLIB
             AddCoreFunction("last (+list)", (args, c) =>
                 {
                     return (args[0] as ListAtom).Value.Last();
+                });
+
+            #endregion
+
+            #region Loops
+
+            AddCoreFunction("map ('x list 'code)", (args, c) =>
+                {
+                    if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to map.");
+                    if (args[1].Type != AtomType.List) throw new EvaluationError("Expected list as second argument to map.");
+
+                    var scope = new RecordAtom { Parent = c.ActiveScope };
+                    c.ActiveScope = scope;
+                    var r = new List<Atom>();
+
+                    foreach (var v in (args[1] as ListAtom).Value)
+                    {
+                        scope.Variables.Upsert((args[0] as TokenAtom).Value, v);
+                        r.Add(args[2].Evaluate(c));
+                    }
+
+                    c.ActiveScope = scope.Parent;
+                    return new ListAtom { Value = r };
+
                 });
 
             #endregion

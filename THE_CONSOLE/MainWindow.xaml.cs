@@ -127,7 +127,7 @@ namespace WpfApplication1
                 }
                 catch (Exception x)
                 {
-                    OutputRoot.Inlines.Add(new Run(x.Message + "\n" + x.StackTrace + "\n") { Foreground = Brushes.Red });
+                    OutputRoot.Inlines.Add(new Run(x.Message + "\n") { Foreground = Brushes.Red });
                     InputBox.Text = saveInput;
                     OutputBox.ScrollToEnd();
                 }
