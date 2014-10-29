@@ -253,7 +253,7 @@ namespace MISPLIB
 
             AddCoreFunction("last (+list)", (args, c) =>
                 {
-                    return args.Last();
+                    return (args[0] as ListAtom).Value.Last();
                 });
 
             #endregion

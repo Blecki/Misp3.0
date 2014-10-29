@@ -21,7 +21,11 @@ namespace MISPLIB
             foreach (var func in Functions)
             {
                 Into.Append("      (func (");
-                Into.Append(String.Join(" ", func.ArgumentNames));
+                foreach (var argName in func.ArgumentNames)
+                {
+                    argName.Emit(Into);
+                    Into.Append(" ");
+                }
                 Into.Append(") ");
                 func.Implementation.Emit(Into);
                 Into.Append(")\n");
@@ -38,7 +42,7 @@ namespace MISPLIB
                 SerializeRecordMembers(AtomsToWrite[i], Into);
                 Into.Append(")\n");
             }
-            Into.AppendFormat("\n\n      (index-get atoms {0})\n   )\n)", AtomsToWrite.Count - 1);
+            Into.Append("\n\n      (index-get atoms 0)\n   )\n)");
         }
 
         private void SerializeRecordMembers(RecordAtom Atom, StringBuilder Into)
@@ -53,6 +57,8 @@ namespace MISPLIB
 
         private void SerializeAtom(Atom Atom, StringBuilder Into)
         {
+            if (Atom.Modifier != Modifier.None) throw new InvalidOperationException();
+
             switch (Atom.Type)
             {
                 case AtomType.Decimal:
@@ -62,19 +68,15 @@ namespace MISPLIB
                     Into.Append((Atom as IntegerAtom).Value);
                     break;
                 case AtomType.Token:
+                    Into.Append("'");
                     Into.Append((Atom as TokenAtom).Value);
                     break;
                 case AtomType.String:
                     Into.Append("\"" + (Atom as StringAtom).Value + "\"");
                     break;
                 case AtomType.List:
-                    Into.Append("'(");
-                    foreach (var item in (Atom as ListAtom).Value)
-                    {
-                        SerializeAtom(item, Into);
-                        Into.Append(" ");
-                    }
-                    Into.Append(")");
+                    Into.Append("'");
+                    Atom.Emit(Into);
                     break;
                 case AtomType.Record:
                     Into.AppendFormat("(index-get atoms {0})", AtomsToWrite.IndexOf(Atom as RecordAtom));

@@ -29,6 +29,8 @@ namespace WpfApplication1
             TextBox_TextChanged(null, null);
             String OpenFilePath = null;
 
+            InputBox.Focus();
+
             this.Title = "New Environment";
 
             MISPLIB.Core.InitiateCore(s =>

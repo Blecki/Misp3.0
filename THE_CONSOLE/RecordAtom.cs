@@ -12,7 +12,7 @@ namespace MISPLIB
         public RecordAtom Parent;
         public Dictionary<String, Atom> Variables = new Dictionary<String, Atom>();
         public override object GetSystemValue() { return this; }
-        public override Atom Evaluate(EvaluationContext Context) { return this; }
+        public override Atom Evaluate(EvaluationContext Context) { return new RecordAtom { Variables = new Dictionary<string, Atom>(Variables) }; }
 
         public bool TryGetValue(String Name, out Atom Value)
         {
