@@ -22,18 +22,26 @@ namespace MISPLIB
             return false;
         }
 
+        private Guid EmissionID = Guid.Empty;
+
         protected override void ImplementEmit(StringBuilder Into)
         {
-            Into.Append("[");
-            foreach (var value in Variables)
+            if (EmissionID == Core.EmissionID) Into.Append("<circular reference>");
+            else
             {
-                Into.Append("(");
-                Into.Append(value.Key);
-                Into.Append(" ");
-                value.Value.Emit(Into);
-                Into.Append(")");
+                EmissionID = Core.EmissionID;
+
+                Into.Append("[");
+                foreach (var value in Variables)
+                {
+                    Into.Append("(");
+                    Into.Append(value.Key);
+                    Into.Append(" ");
+                    value.Value.Emit(Into);
+                    Into.Append(")");
+                }
+                Into.Append("]");
             }
-            Into.Append("]");
         }
     }
 }

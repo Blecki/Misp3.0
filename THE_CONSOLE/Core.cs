@@ -8,6 +8,8 @@ namespace MISPLIB
 {
     public static partial class Core
     {
+        internal static Guid EmissionID;
+
         internal static List<CoreFunction> CoreFunctions;
         
         public static void AddCoreFunction(String Declaration, Func<List<Atom>, EvaluationContext, Atom> Implementation)

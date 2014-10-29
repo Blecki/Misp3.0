@@ -41,6 +41,7 @@ namespace WpfApplication1
 
             MISPLIB.Core.AddCoreFunction("recall (function)", (args, c) =>
                 {
+                    MISPLIB.Core.EmissionID = Guid.NewGuid();
                     var builder = new StringBuilder();
                     args[0].Emit(builder);
                     InputBox.Text = builder.ToString();
@@ -117,6 +118,8 @@ namespace WpfApplication1
 
                     var evaluatedResult = MISPLIB.Core.Evaluate(parsedMisp, GlobalScope);
                     var outputBuilder = new StringBuilder();
+
+                    MISPLIB.Core.EmissionID = Guid.NewGuid();
                     evaluatedResult.Emit(outputBuilder);
 
                     OutputRoot.Inlines.Add(new Run(outputBuilder.ToString() + "\n") { Foreground = Brushes.ForestGreen });
