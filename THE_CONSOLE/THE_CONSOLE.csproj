@@ -57,6 +57,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="CoreFunction.cs" />
     <Compile Include="RecordAtom.cs" />
     <Compile Include="SerializationContext.cs" />
     <Compile Include="StringAtom.cs" />

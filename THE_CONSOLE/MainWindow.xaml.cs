@@ -37,38 +37,23 @@ namespace WpfApplication1
                 OutputBox.ScrollToEnd();
             });
 
-            MISPLIB.Core.CoreFunctions.Add("recall", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("recall (function)", (args, c) =>
                 {
-                    if (args.Count != 2) throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to recall.");
-                    var func = args[1].Evaluate(c);
                     var builder = new StringBuilder();
-                    func.Emit(builder);
+                    args[0].Emit(builder);
                     InputBox.Text = builder.ToString();
-                    return func;
+                    return args[0];
                 });
 
-            MISPLIB.Core.CoreFunctions.Add("@", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("@ ()", (args, c) =>
                 {
                     return GlobalScope;
                 });
 
-            MISPLIB.Core.CoreFunctions.Add("save", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("save (file)", (args, c) =>
                 {
-                    var l = MISPLIB.Core.PrepareStandardArgumentList(args, c);
-                    String saveFileName;
-                    if (l.Count == 1)
-                    {
-                        if (l[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected string as first argument to save.");
-                        saveFileName = (l[0] as MISPLIB.StringAtom).Value;
-                    }
-                    else if (l.Count == 0)
-                    {
-                        if (String.IsNullOrEmpty(OpenFilePath))
-                            throw new MISPLIB.EvaluationError("This environment has never been saved. Please supply a filename.");
-                        saveFileName = OpenFilePath;
-                    }
-                    else
-                        throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to save.");
+                    if (args[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected string as first argument to save.");
+                    var saveFileName = (args[0] as MISPLIB.StringAtom).Value;
 
                     var serializer = new MISPLIB.SerializationContext();
                     var builder = new StringBuilder();
@@ -84,17 +69,15 @@ namespace WpfApplication1
                     return new MISPLIB.StringAtom { Value = OpenFilePath };
                 });
 
-            MISPLIB.Core.CoreFunctions.Add("load", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("load (file)", (args, c) =>
                 {
-                    var l = MISPLIB.Core.PrepareStandardArgumentList(args, c);
-                    if (l.Count != 1) throw new MISPLIB.EvaluationError("Incorrect number of arguments passed to load.");
-                    if (l[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected path as first argument to load.");
+                    if (args[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected path as first argument to load.");
 
-                    var text = System.IO.File.ReadAllText((l[0] as MISPLIB.StringAtom).Value);
+                    var text = System.IO.File.ReadAllText((args[0] as MISPLIB.StringAtom).Value);
                     var parsed = MISPLIB.Core.Parse(new MISPLIB.StringIterator(text));
                     var result = MISPLIB.Core.Evaluate(parsed, GlobalScope);
                     if (result.Type != MISPLIB.AtomType.Record) throw new MISPLIB.EvaluationError("Loading of file did not produce record.");
-                    OpenFilePath = (l[0] as MISPLIB.StringAtom).Value;
+                    OpenFilePath = (args[0] as MISPLIB.StringAtom).Value;
                     this.Title = OpenFilePath;
                     GlobalScope = result as MISPLIB.RecordAtom;
                     return GlobalScope;

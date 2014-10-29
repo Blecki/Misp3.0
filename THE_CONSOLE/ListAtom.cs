@@ -24,6 +24,86 @@ namespace MISPLIB
 
         public override object GetSystemValue() { return this; }
 
+        private static List<Atom> EvaluateArguments(Atom Source, Atom Destination, EvaluationContext Context)
+        {
+            var To = new List<Atom>();
+            if (Source.Modifier == Modifier.Evaluate)
+                To.Add(Source.Evaluate(Context));
+            else if (Source.Modifier == Modifier.Expand)
+            {
+                var v = Source.Evaluate(Context);
+                if (v.Type == AtomType.List)
+                    To.AddRange((v as ListAtom).Value);
+                else
+                    To.Add(v);
+            }
+            else if (Destination.Modifier == Modifier.Quote)
+            {
+                To.Add(Source);
+            }
+            else
+            {
+                To.Add(Source.Evaluate(Context));
+            }
+            return To;
+        }
+
+        public static List<Atom> PrepareStandardArgumentList(List<Atom> Arguments, List<TokenAtom> ArgumentNames, EvaluationContext Context)
+        {
+            var argumentList = new List<Atom>();
+            var destinationIndex = 0;
+            var sourceIndex = 1;
+
+            while (destinationIndex < ArgumentNames.Count && sourceIndex < Arguments.Count)
+            {
+                var destinationArgument = ArgumentNames[destinationIndex];
+                var source = Arguments[sourceIndex];
+                ++sourceIndex;
+                var expandedArgument = EvaluateArguments(source, destinationArgument, Context);
+
+                foreach (var argument in expandedArgument)
+                {
+                    if (destinationIndex >= ArgumentNames.Count) throw new EvaluationError("Too many arguments to function.");
+                    destinationArgument = ArgumentNames[destinationIndex];
+                    List<Atom> addTo = null;
+
+                    if (destinationArgument.Value.StartsWith("+") || destinationArgument.Value.StartsWith("*"))
+                    {
+                        if (destinationIndex == argumentList.Count)
+                        {
+                            var listArg = new ListAtom() { Value = new List<Atom>() };
+                            addTo = listArg.Value;
+                            argumentList.Add(listArg);
+                        }
+                        else
+                        {
+                            var listArg = argumentList.Last() as ListAtom;
+                            if (listArg == null) throw new InvalidOperationException();
+                            addTo = listArg.Value;
+                        }
+                    }
+                    else
+                    {
+                        addTo = argumentList;
+                        ++destinationIndex;
+                    }
+
+                    addTo.Add(argument);
+                }
+            }
+
+            if (argumentList.Count != ArgumentNames.Count) throw new EvaluationError("Incorrect number of arguments to function.");
+            if (ArgumentNames.Count > 0 && ArgumentNames.Last().Value.StartsWith("+"))
+            {
+                var listArg = argumentList.Last() as ListAtom;
+                if (listArg == null) throw new InvalidOperationException();
+                if (listArg.Value.Count == 0) throw new EvaluationError("+ argument demands at least one argument.");
+            }
+
+            return argumentList;
+        }
+
+
         public override Atom Evaluate(EvaluationContext Context)
         {
             if (Modifier == MISPLIB.Modifier.Quote) return new ListAtom { Value = Value, Modifier = MISPLIB.Modifier.None };
@@ -33,61 +113,27 @@ namespace MISPLIB
             if (Value[0].Type == AtomType.Token)
             {
                 var functionToken = Value[0] as TokenAtom;
-
-                if (Core.CoreFunctions.ContainsKey(functionToken.Value))
-                {
-                    var argList = new List<Atom>();
-                    argList.Add(Value[0]);
-                    for (int i = 1; i < Value.Count; ++i)
-                    {
-                        if (Value[i].Modifier == MISPLIB.Modifier.Evaluate)
-                            argList.Add(Value[i].Evaluate(Context));
-                        else
-                            argList.Add(Value[i]);
-                    }
-                    return Core.CoreFunctions[functionToken.Value](argList, Context);
-                }
+                var coreFunction = Core.CoreFunctions.FirstOrDefault(cf => cf.Name == functionToken.Value);
+                if (coreFunction != null)
+                    return coreFunction.Implementation(PrepareStandardArgumentList(Value, coreFunction.ArgumentNames, Context), Context);
             }
 
             var firstAtom = Value[0].Evaluate(Context);
             if (firstAtom.Type != AtomType.Function) throw new EvaluationError("First atom in evaluated list must be a function atom.");
             var function = firstAtom as FunctionAtom;
+            var argumentList = PrepareStandardArgumentList(Value, function.ArgumentNames, Context);
+            
+            var saveScope = Context.ActiveScope;
+            Context.ActiveScope = new RecordAtom { Parent = function.DeclarationScope };
 
-            var argumentList = new List<Atom>();
-
-            for (int i = 1; i < Value.Count; ++i)
+            for (int i = 0; i < function.ArgumentNames.Count; ++i)
             {
-                var sourceArgument = Value[i];
-
-                if (argumentList.Count >= function.ArgumentNames.Count) throw new EvaluationError("Too many arguments to function.");
-
-                if (function.ArgumentNames[argumentList.Count].Modifier == MISPLIB.Modifier.Quote)
-                {
-                    if (sourceArgument.Modifier == MISPLIB.Modifier.Expand) throw new EvaluationError("Expanding arguments cannot be passed to quoted arguments.");
-                    else if (sourceArgument.Modifier == MISPLIB.Modifier.Evaluate)
-                        argumentList.Add(sourceArgument.Evaluate(Context));
-                    else
-                        argumentList.Add(sourceArgument);
-                }
-                else
-                {
-                    var argument = sourceArgument.Evaluate(Context);
-
-                    if (sourceArgument.Modifier == MISPLIB.Modifier.Evaluate)
-                        argumentList.Add(argument.Evaluate(Context));
-                    else if (sourceArgument.Modifier == MISPLIB.Modifier.Expand && argument.Type == AtomType.List)
-                        argumentList.AddRange((argument as ListAtom).Value);
-                    else
-                        argumentList.Add(argument);
-                }
+                var name = function.ArgumentNames[i].Value;
+                if (name.StartsWith("+") || name.StartsWith("*"))
+                    name = name.Substring(1);
+                Context.ActiveScope.Variables.Upsert(name, argumentList[i]);
             }
 
-            if (argumentList.Count != function.ArgumentNames.Count) throw new EvaluationError("Incorrect number of arguments passed to function.");
-
-            var saveScope = Context.ActiveScope;
-            Context.ActiveScope = function.DeclarationScope;
-            for (int i = 0; i < function.ArgumentNames.Count; ++i)
-                Context.ActiveScope.Variables.Upsert(function.ArgumentNames[i].Value, argumentList[i]);
             var result = function.Implementation.Evaluate(Context);
             Context.ActiveScope = saveScope;
 

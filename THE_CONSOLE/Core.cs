@@ -8,51 +8,55 @@ namespace MISPLIB
 {
     public static partial class Core
     {
-        internal static Dictionary<String, Func<List<Atom>, EvaluationContext, Atom>> CoreFunctions;
-
-        public static List<Atom> PrepareStandardArgumentList(List<Atom> Arguments, EvaluationContext Context)
+        internal static List<CoreFunction> CoreFunctions;
+        
+        public static void AddCoreFunction(String Declaration, Func<List<Atom>, EvaluationContext, Atom> Implementation)
         {
-            var result = new List<Atom>();
-            for (int i = 1; i < Arguments.Count; ++i)
+            var parsedDeclaration = Parse(new StringIterator("(" + Declaration + ")"));
+
+            if (parsedDeclaration.Type != AtomType.List) throw new InvalidOperationException();
+            var list = parsedDeclaration as ListAtom;
+            if (list.Value[0].Type != AtomType.Token) throw new InvalidOperationException();
+            if (list.Value[1].Type != AtomType.List) throw new InvalidOperationException();
+            foreach (var arg in (list.Value[1] as ListAtom).Value)
+                if (arg.Type != AtomType.Token || arg.Modifier == Modifier.Evaluate || arg.Modifier == Modifier.Expand)
+                    throw new InvalidOperationException();
+            
+            var result = new CoreFunction
             {
-                var evaluatedAtom = Arguments[i].Evaluate(Context);
-                if (Arguments[i].Modifier == MISPLIB.Modifier.Expand && evaluatedAtom is ListAtom)
-                    result.AddRange((evaluatedAtom as ListAtom).Value);
-                else
-                    result.Add(evaluatedAtom);
-            }
-            return result;
+                Implementation = Implementation,
+                Name = (list.Value[0] as TokenAtom).Value,
+                ArgumentNames = new List<TokenAtom>((list.Value[1] as ListAtom).Value.Select(a => a as TokenAtom)),
+            };
+            
+            CoreFunctions.Add(result);
         }
 
         public static void InitiateCore(Action<String> StandardOutput)
         {
-            CoreFunctions = new Dictionary<String, Func<List<Atom>, EvaluationContext, Atom>>();
+            CoreFunctions = new List<CoreFunction>();
 
-            CoreFunctions.Add("parse", (args, c) =>
+            AddCoreFunction("parse (str)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count != 1) throw new EvaluationError("Incorrect number of arguments to parse.");
-                    if (l[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to parse.");
-                    return Parse(new StringIterator((l[0] as StringAtom).Value));
+                    if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to parse.");
+                    return Parse(new StringIterator((args[0] as StringAtom).Value));
                 });
 
-            CoreFunctions.Add("eval", (args, c) =>
+            AddCoreFunction("eval (atom)", (args, c) =>
                 {
-                    if (args.Count != 2) throw new EvaluationError("Incorrect number of arguments to eval.");
-                    var firstRound = args[1].Evaluate(c);
-                    return firstRound.Evaluate(c);
+                    return args[0].Evaluate(c);
                 });
 
             #region Basic Math
 
-            CoreFunctions.Add("+", (args,c) =>
+            AddCoreFunction("+ (+value)", (args,c) =>
             {
-                var l = PrepareStandardArgumentList(args, c);
-                foreach (var v in l) if (v.Type != AtomType.Integer && v.Type != AtomType.Decimal) throw new EvaluationError("Incorrect argument type passed to +");
-                if (l.Count(v => v.Type == AtomType.Decimal) > 0)
+                var realArgs = (args[0] as ListAtom).Value;
+                foreach (var v in realArgs) if (v.Type != AtomType.Integer && v.Type != AtomType.Decimal) throw new EvaluationError("Incorrect argument type passed to +");
+                if (realArgs.Count(v => v.Type == AtomType.Decimal) > 0)
                 {
                     var sum = 0.0f;
-                    foreach (var v in l)
+                    foreach (var v in realArgs)
                     {
                         if (v.Type == AtomType.Integer) sum += (v as IntegerAtom).Value;
                         else sum += (v as DecimalAtom).Value;
@@ -62,7 +66,7 @@ namespace MISPLIB
                 else
                 {
                     var sum = 0;
-                    foreach (var v in l) sum += (v as IntegerAtom).Value;
+                    foreach (var v in realArgs) sum += (v as IntegerAtom).Value;
                     return new IntegerAtom { Value = sum };
                 }
             });
@@ -71,23 +75,20 @@ namespace MISPLIB
 
             #region Output
 
-            CoreFunctions.Add("print", (args, c) =>
+            AddCoreFunction("print (+arg)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
                     var builder = new StringBuilder();
-                    foreach (var v in l)
+                    foreach (var v in (args[0] as ListAtom).Value)
                         v.Emit(builder);
                     StandardOutput(builder.ToString());
                     return new StringAtom { Value = builder.ToString() };
                 });
 
-            CoreFunctions.Add("format", (args, c) =>
+            AddCoreFunction("format (string *arg)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count == 0) throw new EvaluationError("Not enough arguments passed to format.");
-                    if (l[0].Type != AtomType.String) throw new EvaluationError("First argument to format is not a string.");
-                    var s = (l[0] as StringAtom).Value;
-                    var a = l.GetRange(1, l.Count - 1).Select(v => v.GetSystemValue()).ToArray();
+                    if (args[0].Type != AtomType.String) throw new EvaluationError("First argument to format is not a string.");
+                    var s = (args[0] as StringAtom).Value;
+                    var a = (args[1] as ListAtom).Value.Select(v => v.GetSystemValue()).ToArray();
                     var r = String.Format(s, a);
                     return new StringAtom { Value = r };
                 });
@@ -96,17 +97,16 @@ namespace MISPLIB
 
             #region Functions
 
-            CoreFunctions.Add("func", (args, c) =>
+            AddCoreFunction("func ('args 'body)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of args passed to func.");
-                    if (args[1].Type != AtomType.List) throw new EvaluationError("Expected list of argument names as first argument to func.");
+                    if (args[0].Type != AtomType.List) throw new EvaluationError("Expected list of argument names as first argument to func.");
 
                     var function = new FunctionAtom();
                     function.DeclarationScope = c.ActiveScope;
-                    function.Implementation = args[2];
+                    function.Implementation = args[1];
                     function.ArgumentNames = new List<TokenAtom>();
 
-                    foreach (var argumentName in (args[1] as ListAtom).Value)
+                    foreach (var argumentName in (args[0] as ListAtom).Value)
                     {
                         if (argumentName.Type != AtomType.Token) throw new EvaluationError("Malformed argument list in func.");
                         if (argumentName.Modifier == Modifier.Expand) throw new EvaluationError("Expand modifier illegal on argument name in func.");
@@ -117,36 +117,31 @@ namespace MISPLIB
                     return function;
                 });
 
-            CoreFunctions.Add("set-decl-scope", (args, c) =>
+            AddCoreFunction("set-decl-scope (func scope)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count != 2) throw new EvaluationError("Incorrect number of arguments passed to set-decl-scope.");
-                    if (l[0].Type != AtomType.Function) throw new EvaluationError("Expected function as first argument to set-decl-scope.");
-                    if (l[1].Type != AtomType.Record) throw new EvaluationError("Expected record as second argument to set-decl-scope.");
-                    (l[0] as FunctionAtom).DeclarationScope = (l[1] as RecordAtom);
-                    return l[0];
+                    if (args[0].Type != AtomType.Function) throw new EvaluationError("Expected function as first argument to set-decl-scope.");
+                    if (args[1].Type != AtomType.Record) throw new EvaluationError("Expected record as second argument to set-decl-scope.");
+                    (args[0] as FunctionAtom).DeclarationScope = (args[1] as RecordAtom);
+                    return args[0];
                 });
 
             #endregion
 
             #region Scope And Memory
 
-            CoreFunctions.Add("let", (args, c) =>
+            AddCoreFunction("let ('name value)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to let.");
-                    if (args[1].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to let.");
-                    var value = args[2].Evaluate(c);
-                    c.ActiveScope.Variables.Upsert((args[1] as TokenAtom).Value, value);
-                    return value;
+                    if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to let.");
+                    c.ActiveScope.Variables.Upsert((args[0] as TokenAtom).Value, args[1]);
+                    return args[1];
                 });
 
-            CoreFunctions.Add("with", (args, c) =>
+            AddCoreFunction("with ('vars 'code)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to with.");
-                    if (args[1].Type != AtomType.List) throw new EvaluationError("Expected variable set as first argument to with.");
+                    if (args[0].Type != AtomType.List) throw new EvaluationError("Expected variable set as first argument to with.");
 
                     var scope = new RecordAtom { Variables = new Dictionary<string, Atom>(), Parent = c.ActiveScope };
-                    foreach (var variable in (args[1] as ListAtom).Value)
+                    foreach (var variable in (args[0] as ListAtom).Value)
                     {
                         if (variable.Type != AtomType.List || (variable as ListAtom).Value.Count != 2) throw new EvaluationError("Expected pairs in variable set in first argument to with.");
                         var name = (variable as ListAtom).Value[0];
@@ -159,7 +154,7 @@ namespace MISPLIB
                     Atom result = null;
                     try
                     {
-                        result = args[2].Evaluate(c);
+                        result = args[1].Evaluate(c);
                     }
                     finally
                     {
@@ -172,51 +167,40 @@ namespace MISPLIB
 
             #region Records
 
-            CoreFunctions.Add("set", (args, c) =>
+            AddCoreFunction("set (object 'name value)", (args, c) =>
                 {
-                    if (args.Count != 4) throw new EvaluationError("Incorrect number of arguments passed to set.");
+                    if (args[0].Type != AtomType.Record) throw new EvaluationError("First argument to set must be a record.");
 
-                    var obj = args[1].Evaluate(c);
-                    if (obj.Type != AtomType.Record) throw new EvaluationError("First argument to set must be a record.");
+                    if (args[1].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to set.");
 
-                    if (args[2].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to set.");
-
-                    var value = args[3].Evaluate(c);
-
-                    (obj as RecordAtom).Variables.Upsert((args[2] as TokenAtom).Value, value);
-                    return value;
+                    (args[0] as RecordAtom).Variables.Upsert((args[1] as TokenAtom).Value, args[2]);
+                    return args[2];
                 });
 
-            CoreFunctions.Add("multi-set", (args, c) =>
+            AddCoreFunction("multi-set (object '*pairs)", (args, c) =>
                 {
-                    if (args.Count < 2) throw new EvaluationError("Expected at least one argument to multi-set.");
-                    var record = args[1].Evaluate(c);
-                    if (record.Type != AtomType.Record) throw new EvaluationError("Expected record as first argument to multi-set.");
+                    if (args[0].Type != AtomType.Record) throw new EvaluationError("Expected record as first argument to multi-set.");
 
-                    for (int i = 2; i < args.Count; ++i)
+                    foreach (var pair in (args[1] as ListAtom).Value)
                     {
-                        if (args[i].Type != AtomType.List) throw new EvaluationError("Expected lists as repeating arguments to multi-set.");
-                        var list = args[i] as ListAtom;
+                        if (pair.Type != AtomType.List) throw new EvaluationError("Expected lists as repeating arguments to multi-set.");
+                        var list = pair as ListAtom;
                         if (list.Value.Count != 2) throw new EvaluationError("Expected pairs as repeating arguments to multi-set.");
                         if (list.Value[0].Type != AtomType.Token) throw new EvaluationError("Expected token as first value in pair as repeating arguments to multi-set.");
                         var value = list.Value[1].Evaluate(c);
-                        (record as RecordAtom).Variables.Upsert((list.Value[0] as TokenAtom).Value, value);
+                        (args[0] as RecordAtom).Variables.Upsert((list.Value[0] as TokenAtom).Value, value);
                     }
 
-                    return record;
+                    return args[0];
                 });
 
-            CoreFunctions.Add("get", (args, c) =>
+            AddCoreFunction("get (object 'name)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to get.");
-
-                    var obj = args[1].Evaluate(c);
-                    if (obj.Type != AtomType.Record) throw new EvaluationError("First argument to get must be a record.");
-
-                    if (args[2].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to get.");
+                    if (args[0].Type != AtomType.Record) throw new EvaluationError("First argument to get must be a record.");
+                    if (args[1].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to get.");
 
                     Atom value;
-                    if ((obj as RecordAtom).Variables.TryGetValue((args[2] as TokenAtom).Value, out value))
+                    if ((args[0] as RecordAtom).Variables.TryGetValue((args[1] as TokenAtom).Value, out value))
                         return value;
                     else
                         throw new EvaluationError("Member not found on record.");
@@ -226,97 +210,95 @@ namespace MISPLIB
 
             #region Lists
 
-            CoreFunctions.Add("list", (args, c) =>
+            AddCoreFunction("list (*values)", (args, c) =>
                 {
-                    return new ListAtom { Value = PrepareStandardArgumentList(args, c) };
+                    return args[0]; // :D!!!!
                 });
 
-            CoreFunctions.Add("length", (args, c) =>
+            AddCoreFunction("length (list-or-string)", (args, c) =>
                 {
-                    if (args.Count != 2) throw new EvaluationError("Incorrect number of arguments passed to length.");
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l[0].Type == AtomType.List) return new IntegerAtom { Value = (l[0] as ListAtom).Value.Count };
-                    else if (l[0].Type == AtomType.String) return new IntegerAtom { Value = (l[0] as StringAtom).Value.Length };
+                    if (args[0].Type == AtomType.List) return new IntegerAtom { Value = (args[0] as ListAtom).Value.Count };
+                    else if (args[0].Type == AtomType.String) return new IntegerAtom { Value = (args[0] as StringAtom).Value.Length };
                     else
                         throw new EvaluationError("Expected list or string as first argument to length.");
                 });
 
-            CoreFunctions.Add("index-get", (args, c) =>
+            AddCoreFunction("index-get (list index)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to index-get.");
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to index-get.");
-                    if (l[0].Type == AtomType.List) return (l[0] as ListAtom).Value[(l[1] as IntegerAtom).Value];
-                    else if (l[0].Type == AtomType.String) return new IntegerAtom { Value = (l[0] as StringAtom).Value[(l[1] as IntegerAtom).Value]};
+                    if (args[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to index-get.");
+                    if (args[0].Type == AtomType.List) return (args[0] as ListAtom).Value[(args[1] as IntegerAtom).Value];
+                    else if (args[0].Type == AtomType.String) return new IntegerAtom { Value = (args[0] as StringAtom).Value[(args[1] as IntegerAtom).Value]};
                     else throw new EvaluationError("Expected list or string as first argument to index-get.");
                 });
 
-            CoreFunctions.Add("replace-at", (args, c) =>
+            AddCoreFunction("replace-at (list index value)", (args, c) =>
             {
-                if (args.Count != 4) throw new EvaluationError("Incorrect number of arguments passed to replace-at.");
-                var l = PrepareStandardArgumentList(args, c);
-                if (l[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to replace-at.");
-                if (l[0].Type != AtomType.List) throw new EvaluationError("Expected list as first argument to replace-at.");
-                var r = new ListAtom { Value = new List<Atom>((l[0] as ListAtom).Value) };
-                r.Value[(l[1] as IntegerAtom).Value] = l[2];
+                if (args[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to replace-at.");
+                if (args[0].Type != AtomType.List) throw new EvaluationError("Expected list as first argument to replace-at.");
+                var r = new ListAtom { Value = new List<Atom>((args[0] as ListAtom).Value) };
+                r.Value[(args[1] as IntegerAtom).Value] = args[2];
                 return r;
             });
 
-            CoreFunctions.Add("array", (args, c) =>
+            AddCoreFunction("array (count 'code)", (args, c) =>
                 {
-                    if (args.Count != 3) throw new EvaluationError("Incorrect number of arguments passed to array.");
-                    var count = args[1].Evaluate(c);
+                    var count = args[0];
                     if (count.Type != AtomType.Integer) throw new EvaluationError("Expected integer count as first argument to array.");
 
                     var r = new ListAtom() { Value = new List<Atom>() };
                     for (int i = 0; i < (count as IntegerAtom).Value; ++i)
-                        r.Value.Add(args[2].Evaluate(c));
+                        r.Value.Add(args[1].Evaluate(c));
                     return r;
                 });
 
-            CoreFunctions.Add("last", (args, c) =>
+            AddCoreFunction("last (+list)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count == 0) throw new EvaluationError("Can't get last element of empty list.");
-                    return l.Last();
+                    return args.Last();
                 });
 
             #endregion
 
             #region Serialization
 
-            CoreFunctions.Add("serialize", (args, c) =>
+            AddCoreFunction("serialize (record)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count != 1) throw new EvaluationError("Incorrect number of arguments passed to serialize.");
-                    if (l[0].Type != AtomType.Record) throw new EvaluationError("Expect record as first argument to serialize.");
+                    if (args[0].Type != AtomType.Record) throw new EvaluationError("Expect record as first argument to serialize.");
                     var serializer = new SerializationContext();
                     var builder = new StringBuilder();
-                    serializer.Serialize(l[0] as RecordAtom, builder);
+                    serializer.Serialize(args[0] as RecordAtom, builder);
                     return new StringAtom { Value = builder.ToString() };
+                });
+
+            AddCoreFunction("to-int (value)", (args, c) =>
+                {
+                    if (args[0].Type == AtomType.Integer) return args[0];
+                    else if (args[0].Type == AtomType.Decimal) return new IntegerAtom { Value = (int)(args[0] as DecimalAtom).Value };
+                    else if (args[0].Type == AtomType.String)
+                    {
+                        int v = 0;
+                        if (Int32.TryParse((args[0] as StringAtom).Value, out v))
+                            return new IntegerAtom { Value = v };
+                    }
+                    throw new EvaluationError("Could not convert value to integer.");
                 });
 
             #endregion
 
             #region Files
 
-            CoreFunctions.Add("write-all", (args, c) =>
+            AddCoreFunction("write-all (file text)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count != 2) throw new EvaluationError("Incorrect number of arguments passed to write-all.");
-                    if (l[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to write-all.");
-                    if (l[1].Type != AtomType.String) throw new EvaluationError("Expected string as second argument to write-all.");
+                    if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to write-all.");
+                    if (args[1].Type != AtomType.String) throw new EvaluationError("Expected string as second argument to write-all.");
 
-                    System.IO.File.WriteAllText((l[0] as StringAtom).Value, (l[1] as StringAtom).Value);
-                    return l[1];
+                    System.IO.File.WriteAllText((args[0] as StringAtom).Value, (args[1] as StringAtom).Value);
+                    return args[1];
                 });
 
-            CoreFunctions.Add("read-all", (args, c) =>
+            AddCoreFunction("read-all (file)", (args, c) =>
                 {
-                    var l = PrepareStandardArgumentList(args, c);
-                    if (l.Count != 1) throw new EvaluationError("Incorrect number of arguments passed to read-all.");
-                    if (l[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to read-all.");
-                    return new StringAtom { Value = System.IO.File.ReadAllText((l[0] as StringAtom).Value) };
+                    if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to read-all.");
+                    return new StringAtom { Value = System.IO.File.ReadAllText((args[0] as StringAtom).Value) };
                 });
 
             #endregion
