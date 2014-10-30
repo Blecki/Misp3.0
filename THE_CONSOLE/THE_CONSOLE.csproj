@@ -62,6 +62,7 @@
     <Compile Include="SerializationContext.cs" />
     <Compile Include="StringAtom.cs" />
     <Compile Include="StringIterator.cs" />
+    <Compile Include="NilAtom.cs" />
     <Compile Include="TokenAtom.cs" />
     <Compile Include="Upsert.cs" />
     <Page Include="MainWindow.xaml">

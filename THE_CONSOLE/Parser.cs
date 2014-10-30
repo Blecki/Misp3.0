@@ -106,7 +106,11 @@ namespace MISPLIB
                 result = ParseString(Iterator);
             }
             else
+            {
                 result = ParseToken(Iterator);
+                if (result.Type == AtomType.Token && (result as TokenAtom).Value == "nil")
+                    result = new NilAtom();
+            }
 
             result.Modifier = modifier;
             

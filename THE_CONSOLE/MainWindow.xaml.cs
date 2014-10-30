@@ -23,6 +23,9 @@ namespace WpfApplication1
         MISPLIB.RecordAtom GlobalScope = new MISPLIB.RecordAtom();
         Paragraph OutputRoot = new Paragraph();
 
+        public List<String> CommandMemory = new List<string>();
+        public int MemoryScrollIndex = 0;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -39,7 +42,7 @@ namespace WpfApplication1
                 OutputBox.ScrollToEnd();
             });
 
-            MISPLIB.Core.AddCoreFunction("recall (function)", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("recall function", (args, c) =>
                 {
                     MISPLIB.Core.EmissionID = Guid.NewGuid();
                     var builder = new StringBuilder();
@@ -48,12 +51,12 @@ namespace WpfApplication1
                     return args[0];
                 });
 
-            MISPLIB.Core.AddCoreFunction("@ ()", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("@", (args, c) =>
                 {
                     return GlobalScope;
                 });
 
-            MISPLIB.Core.AddCoreFunction("save (file)", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("save file", (args, c) =>
                 {
                     if (args[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected string as first argument to save.");
                     var saveFileName = (args[0] as MISPLIB.StringAtom).Value;
@@ -72,7 +75,7 @@ namespace WpfApplication1
                     return new MISPLIB.StringAtom { Value = OpenFilePath };
                 });
 
-            MISPLIB.Core.AddCoreFunction("load (file)", (args, c) =>
+            MISPLIB.Core.AddCoreFunction("load file", (args, c) =>
                 {
                     if (args[0].Type != MISPLIB.AtomType.String) throw new MISPLIB.EvaluationError("Expected path as first argument to load.");
 
@@ -124,12 +127,45 @@ namespace WpfApplication1
 
                     OutputRoot.Inlines.Add(new Run(outputBuilder.ToString() + "\n") { Foreground = Brushes.ForestGreen });
                     OutputBox.ScrollToEnd();
+
+                    CommandMemory.Add(saveInput);
+                    MemoryScrollIndex = CommandMemory.Count;
                 }
                 catch (Exception x)
                 {
                     OutputRoot.Inlines.Add(new Run(x.Message + "\n") { Foreground = Brushes.Red });
                     InputBox.Text = saveInput;
                     OutputBox.ScrollToEnd();
+                }
+
+                e.Handled = true;
+            }
+        }
+
+        private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Up)
+            {
+                MemoryScrollIndex -= 1;
+                if (MemoryScrollIndex < 0) MemoryScrollIndex = 0;
+                if (MemoryScrollIndex < CommandMemory.Count)
+                {
+                    InputBox.Text = CommandMemory[MemoryScrollIndex];
+                    InputBox.Focus();
+                    InputBox.SelectAll();
+                }
+
+                e.Handled = true;
+            }
+            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Down)
+            {
+                MemoryScrollIndex += 1;
+                if (MemoryScrollIndex > CommandMemory.Count) MemoryScrollIndex = CommandMemory.Count;
+                if (MemoryScrollIndex < CommandMemory.Count)
+                {
+                    InputBox.Text = CommandMemory[MemoryScrollIndex];
+                    InputBox.Focus();
+                    InputBox.SelectAll();
                 }
 
                 e.Handled = true;

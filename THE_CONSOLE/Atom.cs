@@ -23,6 +23,7 @@ namespace MISPLIB
         List,
         Record,
         Function,
+        Nil,
         Error,
     }
 

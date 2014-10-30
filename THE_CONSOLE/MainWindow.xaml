@@ -7,7 +7,7 @@
             <RowDefinition Height="181*"/>
             <RowDefinition x:Name="BottomRow" Height="139*"/>
         </Grid.RowDefinitions>
-        <TextBox x:Name="InputBox" TextWrapping="Wrap" HorizontalContentAlignment="Stretch" FontFamily="Envy Code R" AcceptsReturn="True" AcceptsTab="True" Grid.Row="1" VerticalContentAlignment="Stretch" SpellCheck.IsEnabled="True" TextChanged="TextBox_TextChanged" VerticalScrollBarVisibility="Auto" KeyDown="InputBox_KeyDown" Background="Black" Foreground="White"/>
+        <TextBox x:Name="InputBox" TextWrapping="Wrap" HorizontalContentAlignment="Stretch" FontFamily="Envy Code R" AcceptsReturn="True" AcceptsTab="True" Grid.Row="1" VerticalContentAlignment="Stretch" SpellCheck.IsEnabled="True" TextChanged="TextBox_TextChanged" VerticalScrollBarVisibility="Auto" KeyDown="InputBox_KeyDown" Background="Black" Foreground="White" PreviewKeyDown="InputBox_PreviewKeyDown"/>
         <RichTextBox x:Name="OutputBox" Margin="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto" Background="Black" Foreground="White" SelectionBrush="#FF537EAA">
             <FlowDocument/>
         </RichTextBox>

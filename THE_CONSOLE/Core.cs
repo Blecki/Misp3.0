@@ -18,9 +18,7 @@ namespace MISPLIB
 
             if (parsedDeclaration.Type != AtomType.List) throw new InvalidOperationException();
             var list = parsedDeclaration as ListAtom;
-            if (list.Value[0].Type != AtomType.Token) throw new InvalidOperationException();
-            if (list.Value[1].Type != AtomType.List) throw new InvalidOperationException();
-            foreach (var arg in (list.Value[1] as ListAtom).Value)
+            foreach (var arg in list.Value)
                 if (arg.Type != AtomType.Token || arg.Modifier == Modifier.Evaluate || arg.Modifier == Modifier.Expand)
                     throw new InvalidOperationException();
             
@@ -28,7 +26,7 @@ namespace MISPLIB
             {
                 Implementation = Implementation,
                 Name = (list.Value[0] as TokenAtom).Value,
-                ArgumentNames = new List<TokenAtom>((list.Value[1] as ListAtom).Value.Select(a => a as TokenAtom)),
+                ArgumentNames = new List<TokenAtom>(list.Value.Skip(1).Select(a => a as TokenAtom)),
             };
             
             CoreFunctions.Add(result);
@@ -40,22 +38,69 @@ namespace MISPLIB
 
             #region Vitals
 
-            AddCoreFunction("parse (str)", (args, c) =>
+            AddCoreFunction("parse str", (args, c) =>
                 {
                     if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to parse.");
                     return Parse(new StringIterator((args[0] as StringAtom).Value));
                 });
 
-            AddCoreFunction("eval (atom)", (args, c) =>
+            AddCoreFunction("eval atom", (args, c) =>
                 {
                     return args[0].Evaluate(c);
                 });
 
             #endregion
 
+            #region Equality and Comparison
+
+            AddCoreFunction("= +args", (args, c) =>
+                {
+                    var values = (args[0] as ListAtom).Value;
+                    var type = values[0].Type;
+                    foreach (var v in values)
+                    {
+                        if (v.Type != type) return new IntegerAtom { Value = 0 };
+                        switch (values[0].Type)
+                        {
+                            case AtomType.Decimal:
+                                if ((v as DecimalAtom).Value != (values[0] as DecimalAtom).Value) return new IntegerAtom { Value = 0 };
+                                break;
+                            case AtomType.Integer:
+                                if ((v as IntegerAtom).Value != (values[0] as IntegerAtom).Value) return new IntegerAtom { Value = 0 };
+                                break;
+                            case AtomType.String:
+                                if ((v as StringAtom).Value != (values[0] as StringAtom).Value) return new IntegerAtom { Value = 0 };
+                                break;
+                            case AtomType.Token:
+                                if ((v as TokenAtom).Value != (values[0] as TokenAtom).Value) return new IntegerAtom { Value = 0 };
+                                break;
+                            case AtomType.Function:
+                            case AtomType.List:
+                            case AtomType.Record:
+                                if (!Object.ReferenceEquals(v, values[0])) return new IntegerAtom { Value = 0 };
+                                break;
+                        }
+                    }
+
+                    return new IntegerAtom { Value = 1 };
+                });
+
+            #endregion
+
+            #region Branches
+
+            AddCoreFunction("if condition 'then 'else", (args, c) =>
+                {
+                    var branch = args[1];
+                    if (args[0].Type != AtomType.Integer || (args[0] as IntegerAtom).Value == 0) branch = args[2];
+                    return branch.Evaluate(c);
+                });
+
+            #endregion
+
             #region Basic Math
 
-            AddCoreFunction("+ (+value)", (args,c) =>
+            AddCoreFunction("+ +value", (args,c) =>
             {
                 var realArgs = (args[0] as ListAtom).Value;
                 foreach (var v in realArgs) if (v.Type != AtomType.Integer && v.Type != AtomType.Decimal) throw new EvaluationError("Incorrect argument type passed to +");
@@ -81,7 +126,7 @@ namespace MISPLIB
 
             #region Output
 
-            AddCoreFunction("print (+arg)", (args, c) =>
+            AddCoreFunction("print +arg", (args, c) =>
                 {
                     var builder = new StringBuilder();
                     foreach (var v in (args[0] as ListAtom).Value)
@@ -90,7 +135,7 @@ namespace MISPLIB
                     return new StringAtom { Value = builder.ToString() };
                 });
 
-            AddCoreFunction("format (string *arg)", (args, c) =>
+            AddCoreFunction("format string *arg", (args, c) =>
                 {
                     if (args[0].Type != AtomType.String) throw new EvaluationError("First argument to format is not a string.");
                     var s = (args[0] as StringAtom).Value;
@@ -103,7 +148,7 @@ namespace MISPLIB
 
             #region Functions
 
-            AddCoreFunction("func ('args 'body)", (args, c) =>
+            AddCoreFunction("func 'args 'body", (args, c) =>
                 {
                     if (args[0].Type != AtomType.List) throw new EvaluationError("Expected list of argument names as first argument to func.");
 
@@ -123,7 +168,7 @@ namespace MISPLIB
                     return function;
                 });
 
-            AddCoreFunction("set-decl-scope (func scope)", (args, c) =>
+            AddCoreFunction("set-decl-scope func scope", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Function) throw new EvaluationError("Expected function as first argument to set-decl-scope.");
                     if (args[1].Type != AtomType.Record) throw new EvaluationError("Expected record as second argument to set-decl-scope.");
@@ -135,14 +180,14 @@ namespace MISPLIB
 
             #region Scope And Memory
 
-            AddCoreFunction("let ('name value)", (args, c) =>
+            AddCoreFunction("let 'name value", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to let.");
                     c.ActiveScope.Variables.Upsert((args[0] as TokenAtom).Value, args[1]);
                     return args[1];
                 });
 
-            AddCoreFunction("with ('vars 'code)", (args, c) =>
+            AddCoreFunction("with 'vars 'code", (args, c) =>
                 {
                     if (args[0].Type != AtomType.List) throw new EvaluationError("Expected variable set as first argument to with.");
 
@@ -173,7 +218,7 @@ namespace MISPLIB
 
             #region Records
 
-            AddCoreFunction("set (object 'name value)", (args, c) =>
+            AddCoreFunction("set object 'name value", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Record) throw new EvaluationError("First argument to set must be a record.");
 
@@ -183,7 +228,7 @@ namespace MISPLIB
                     return args[2];
                 });
 
-            AddCoreFunction("multi-set (object '*pairs)", (args, c) =>
+            AddCoreFunction("multi-set object '*pairs", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Record) throw new EvaluationError("Expected record as first argument to multi-set.");
 
@@ -200,7 +245,7 @@ namespace MISPLIB
                     return args[0];
                 });
 
-            AddCoreFunction("get (object 'name)", (args, c) =>
+            AddCoreFunction("get object 'name", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Record) throw new EvaluationError("First argument to get must be a record.");
                     if (args[1].Type != AtomType.Token) throw new EvaluationError("Expected member name as second argument to get.");
@@ -216,12 +261,12 @@ namespace MISPLIB
 
             #region Lists
 
-            AddCoreFunction("list (*values)", (args, c) =>
+            AddCoreFunction("list *values", (args, c) =>
                 {
                     return args[0]; // :D!!!!
                 });
 
-            AddCoreFunction("length (list-or-string)", (args, c) =>
+            AddCoreFunction("length list-or-string", (args, c) =>
                 {
                     if (args[0].Type == AtomType.List) return new IntegerAtom { Value = (args[0] as ListAtom).Value.Count };
                     else if (args[0].Type == AtomType.String) return new IntegerAtom { Value = (args[0] as StringAtom).Value.Length };
@@ -229,7 +274,7 @@ namespace MISPLIB
                         throw new EvaluationError("Expected list or string as first argument to length.");
                 });
 
-            AddCoreFunction("index-get (list index)", (args, c) =>
+            AddCoreFunction("index-get list index", (args, c) =>
                 {
                     if (args[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to index-get.");
                     if (args[0].Type == AtomType.List) return (args[0] as ListAtom).Value[(args[1] as IntegerAtom).Value];
@@ -237,7 +282,7 @@ namespace MISPLIB
                     else throw new EvaluationError("Expected list or string as first argument to index-get.");
                 });
 
-            AddCoreFunction("replace-at (list index value)", (args, c) =>
+            AddCoreFunction("replace-at list index value", (args, c) =>
             {
                 if (args[1].Type != AtomType.Integer) throw new EvaluationError("Expected integer index as second argument to replace-at.");
                 if (args[0].Type != AtomType.List) throw new EvaluationError("Expected list as first argument to replace-at.");
@@ -246,7 +291,7 @@ namespace MISPLIB
                 return r;
             });
 
-            AddCoreFunction("array (count 'code)", (args, c) =>
+            AddCoreFunction("array count 'code", (args, c) =>
                 {
                     var count = args[0];
                     if (count.Type != AtomType.Integer) throw new EvaluationError("Expected integer count as first argument to array.");
@@ -257,16 +302,16 @@ namespace MISPLIB
                     return r;
                 });
 
-            AddCoreFunction("last (+list)", (args, c) =>
+            AddCoreFunction("last +list", (args, c) =>
                 {
                     return (args[0] as ListAtom).Value.Last();
                 });
 
             #endregion
 
-            #region Loops
+            #region List Manipulations
 
-            AddCoreFunction("map ('x list 'code)", (args, c) =>
+            AddCoreFunction("map 'x list 'code", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to map.");
                     if (args[1].Type != AtomType.List) throw new EvaluationError("Expected list as second argument to map.");
@@ -283,14 +328,55 @@ namespace MISPLIB
 
                     c.ActiveScope = scope.Parent;
                     return new ListAtom { Value = r };
+                });
 
+            AddCoreFunction("where 'x list 'code", (args, c) =>
+                {
+                    if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to where.");
+                    if (args[1].Type != AtomType.List) throw new EvaluationError("Expected list as second argument to where.");
+
+                    var scope = new RecordAtom { Parent = c.ActiveScope };
+                    c.ActiveScope = scope;
+                    var r = new List<Atom>();
+
+                    foreach (var v in (args[1] as ListAtom).Value)
+                    {
+                        scope.Variables.Upsert((args[0] as TokenAtom).Value, v);
+                        var testResult = args[2].Evaluate(c);
+                        if (testResult.Type == AtomType.Integer && (testResult as IntegerAtom).Value != 0)
+                            r.Add(v);
+                    }
+
+                    c.ActiveScope = scope.Parent;
+                    return new ListAtom { Value = r };
+                });
+
+            AddCoreFunction("for 'v from to 'code", (args, c) =>
+                {
+                    if (args[0].Type != AtomType.Token) throw new EvaluationError("Expected argument name as first argument to for.");
+                    if (args[1].Type != AtomType.Integer) throw new EvaluationError("Expected minimum index as second argument to for.");
+                    if (args[2].Type != AtomType.Integer) throw new EvaluationError("Expected maximum exclusive index as third argument to for.");
+
+                    Atom v = new NilAtom();
+                    var scope = new RecordAtom { Parent = c.ActiveScope };
+                    c.ActiveScope = scope;
+
+                    for (int i = (args[1] as IntegerAtom).Value; i < (args[2] as IntegerAtom).Value; ++i)
+                    {
+                        scope.Variables.Upsert((args[0] as TokenAtom).Value, new IntegerAtom { Value = i });
+                        v = args[3].Evaluate(c);
+                    }
+
+                    c.ActiveScope = scope.Parent;
+
+                    return v;
                 });
 
             #endregion
 
             #region Serialization
 
-            AddCoreFunction("serialize (record)", (args, c) =>
+            AddCoreFunction("serialize record", (args, c) =>
                 {
                     if (args[0].Type != AtomType.Record) throw new EvaluationError("Expect record as first argument to serialize.");
                     var serializer = new SerializationContext();
@@ -299,7 +385,7 @@ namespace MISPLIB
                     return new StringAtom { Value = builder.ToString() };
                 });
 
-            AddCoreFunction("to-int (value)", (args, c) =>
+            AddCoreFunction("to-int value", (args, c) =>
                 {
                     if (args[0].Type == AtomType.Integer) return args[0];
                     else if (args[0].Type == AtomType.Decimal) return new IntegerAtom { Value = (int)(args[0] as DecimalAtom).Value };
@@ -316,7 +402,7 @@ namespace MISPLIB
 
             #region Files
 
-            AddCoreFunction("write-all (file text)", (args, c) =>
+            AddCoreFunction("write-all file text", (args, c) =>
                 {
                     if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to write-all.");
                     if (args[1].Type != AtomType.String) throw new EvaluationError("Expected string as second argument to write-all.");
@@ -325,7 +411,7 @@ namespace MISPLIB
                     return args[1];
                 });
 
-            AddCoreFunction("read-all (file)", (args, c) =>
+            AddCoreFunction("read-all file", (args, c) =>
                 {
                     if (args[0].Type != AtomType.String) throw new EvaluationError("Expected string as first argument to read-all.");
                     return new StringAtom { Value = System.IO.File.ReadAllText((args[0] as StringAtom).Value) };
